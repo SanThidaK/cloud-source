@@ -29,3 +29,7 @@ coverage
 *.sw?
 
 yarn.lock
+
+.firebase
+
+.github

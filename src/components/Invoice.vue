@@ -1,5 +1,9 @@
 <script>
   import { ref } from "vue";
+  import { onValue, update, push 
+  } from '@firebase/database';
+
+  import itemsRef from "../firebase";
 
   export default {
     setup() {
@@ -8,6 +12,8 @@
       const search_value = ref("");
       const sub_total = ref(0);
       const tax = ref(0);
+      const editing = ref(false);
+      const key = ref(null);
       const row_data = ref([
         {
           id: 1,
@@ -40,8 +46,13 @@
         form_invoice_name,
         row_data,
         sub_total,
-        tax
+        tax,
+        editing,
+        key
       };
+    },
+    mounted() {
+      this.getInvoices()
     },
     methods: {
       async resetForm() {
@@ -63,15 +74,48 @@
         this.tax = 0
         this.form_invoice_name = null
       },
-      addNewItem() {
+      formatData(datas) {
+        for (let key in datas) {
+          // console.log(datas, key, datas[key], '-------')
+          const array = datas[key];
+          array.key = key
+          // const data = {}
+          // this.invoice_name = datas[key][0]
+          // this.items.push(datas[key][1])
+          this.items.push(array)
+        }
+      },
+      async getInvoices() {
+        onValue(itemsRef, (snapshot) => {
+          const data = snapshot.val();
+          this.formatData(data);
+        })
+
+      },
+      async addNewItem() {
         if (this.form_invoice_name !== null){
-          this.invoice_name = this.form_invoice_name;
+          const items_arr = {
+            invoice_name: this.form_invoice_name,
+            items: []
+          };
           this.row_data.map(item => {
             if (item.name !== '' && item.price !== null && item.amount !== null) {
               this.sub_total = this.sub_total + (item.price * item.amount);
-              this.items.push(JSON.parse(JSON.stringify(item)))
+              items_arr.items.push(item)
             }
           })
+
+          if (this.editing) {
+            const newPostKey = this.key;
+            const updates = {};
+            updates[newPostKey] = items_arr;
+            update(itemsRef, updates);
+          } else {
+            const newPostKey = push(itemsRef, 'items').key;
+            const updates = {};
+            updates[newPostKey] = items_arr;
+            update(itemsRef, updates);
+          }
         }
       },
       addNewItemRow() {
@@ -84,7 +128,13 @@
       },
       deleteRow(index){    
         this.row_data.splice(index,1);             
-      },    
+      },  
+      editInvoice(item) {
+        this.editing = true;
+        this.key = item.key;
+        this.form_invoice_name = item.invoice_name;
+        this.row_data = item.items;
+      },  
       log (value) {
         console.log(value);
       }
@@ -94,35 +144,46 @@
 
 <template>
   <div class="my-3 mx-5">
-    <div class="mb-5 space-y-5">
-      <h1 class="text-center text-xl font-bold">
-        {{ invoice_name }}
-      </h1>
-      <input type="search" 
-        v-model="search_value"
-        class="rounded-lg border p-2" 
-        placeholder="Search"
-      />
-    </div>
-
-    <EasyDataTable
-      :headers="headers"
-      :items="items"
-      :header-item-class-name="headerItemClassNameFunction"
-      :search-value="search_value"
-      rows-per-page="10"
-      buttons-pagination="true"
-      theme-color="#005E97"
-      show-index
-      alternating
-    >
-      <template #loading>
-        <img
-          src="https://i.pinimg.com/originals/94/fd/2b/94fd2bf50097ade743220761f41693d5.gif"
-          style="width: 100px; height: 80px"
+    <div v-for="item in items" class="mt-10 mb-20">
+      <!-- invoice name and search -->
+      <div class="mb-5 space-y-5">
+        <div class="flex flex-row justify-around">
+          <h1 class="text-xl font-bold">
+            {{ item.invoice_name }}
+          </h1>
+          <p class="text-lg font-bold cursor-pointer"
+            @click="editInvoice(item)"
+          >
+            Edit
+          </p>
+        </div>
+        <input type="search" 
+          v-model="search_value"
+          class="rounded-lg border p-2" 
+          placeholder="Search"
         />
-      </template>
-    </EasyDataTable>
+      </div>
+      <!-- invoice name and search -->
+
+      <EasyDataTable
+        :headers="headers"
+        :items="item.items"
+        :header-item-class-name="headerItemClassNameFunction"
+        :search-value="search_value"
+        rows-per-page="10"
+        buttons-pagination="true"
+        theme-color="#005E97"
+        show-index
+        alternating
+      >
+        <template #loading>
+          <img
+            src="https://i.pinimg.com/originals/94/fd/2b/94fd2bf50097ade743220761f41693d5.gif"
+            style="width: 100px; height: 80px"
+          />
+        </template>
+      </EasyDataTable>
+    </div>
 
     <!-- Add New Invoice -->
     <div class="mt-10 mb-5">
@@ -138,7 +199,7 @@
         />
       </div>
 
-        <!-- Form Table -->
+      <!-- Form Table -->
       <table class="w-full">
         <thead class="bg-white border-b">
           <tr>
@@ -216,6 +277,8 @@
           Reset
         </div>
       </div>
+      
+      <!-- sub total, tax and total -->
       <div class="w-full">
         <div class="w-1/3 m-5 space-y-5 margin-auto">
           <div class="flex flex-row">
@@ -250,12 +313,24 @@
           </div>
         </div>
       </div>
-      <div class="w-28 border border-gray-900 rounded-lg text-black text-20 p-2 text-center cursor-pointer"
+      <!-- sub total, tax and total -->
+
+      <div
+        v-if="editing" 
+        class="w-28 border border-gray-900 rounded-lg text-black text-20 p-2 text-center cursor-pointer"
+        @click="addNewItem"
+      >
+        Update
+      </div>
+      <div
+        v-else 
+        class="w-28 border border-gray-900 rounded-lg text-black text-20 p-2 text-center cursor-pointer"
         @click="addNewItem"
       >
         Create
       </div>
     </div> 
+
   </div>
 </template>
 
